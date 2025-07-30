@@ -1,0 +1,92 @@
+{
+    "name": "gnoc-ai3-chatbot-AIR227998",
+    "version": "1.0.1",
+    "description": "viewer-request lambda that follows Cloud 2.0 distribution model provides authentication flow ahead of creating secure-cookies to comply with policy 638 and implements secure cookie signer using key pair group.",
+    "repository": "https://dev.azure.com/accenturecio08/CCS/_git/5064-tfmod-edgelambda-aws",
+    "main": "lib/authCodeFlowShim.js",
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "lint": "eslint src/",
+        "pack": "npm-pack-zip",
+        "test": "jest",
+        "test:ci": "jest --collect-coverage",
+        "test:watch": " jest --watch",
+        "prebuild": "cp ./env.dev.json ./env.json",
+        "postbuild": "mv lib/src/* lib/ && npm run minify && npm run packenv --env=sandbox && npm run packenv --env=dev && npm run packenv --env=stg && npm run packenv --env=prod",
+        "packenv": "cp ./env.$npm_config_env.json ./env.json && npm run pack && mkdir -p $npm_config_env && mv *.zip ./$npm_config_env",
+        "minify": "npx terser  -c drop_console,passes=2 -m toplevel  --output lib/authCodeAadRedirect.min.js -- lib/authCodeAadRedirect.js"
+    },
+    "files": [
+        "env.json",
+        "/lib/authCodeFlowShim.js",
+        "/lib/authCodeAadRedirect.min.js",
+        "/lib/authCodeAadRedirect.js",
+        "/lib/authenticationService.js"
+    ],
+    "bundledDependencies": [
+        "jsonwebtoken",
+        "jwks-rsa"
+    ],
+    "author": "CIO Application Architecture",
+    "license": "UNLICENSED",
+    "devDependencies": {
+        "@aws-sdk/client-secrets-manager": "^3.470.0",
+        "@aws-sdk/cloudfront-signer": "^3.468.0",
+        "@types/jest": "^27.0.2",
+        "@types/node": "^14.17.32",
+        "@typescript-eslint/eslint-plugin": "^3.9.0",
+        "@typescript-eslint/parser": "^3.9.0",
+        "eslint": "^7.6.0",
+        "eslint-config-prettier": "^6.15.0",
+        "eslint-plugin-prettier": "^3.4.0",
+        "jest": "^27.0.6",
+        "jest-junit": "^13.0.0",
+        "npm-pack-zip": "^1.2.9",
+        "prettier": "^2.3.2",
+        "terser": "^5.2.0",
+        "ts-jest": "^27.0.3",
+        "typescript": "^4.4.4"
+    },
+    "dependencies": {
+        "jsonwebtoken": "^9.0.2",
+        "jwks-rsa": "^2.0.3"
+    },
+    "jest": {
+        "globals": {
+            "ts-jest": {
+                "tsconfig": "tsconfig.json"
+            }
+        },
+        "roots": [
+            "./"
+        ],
+        "preset": "ts-jest",
+        "testMatch": [
+            "**/?(*.)+(spec|test).[t]s?(x)",
+            "tests/**/*.[t]s?(x)",
+            "tests/*.ts"
+        ],
+        "testPathIgnorePatterns": [
+            "/node_modules/"
+        ],
+        "testEnvironment": "node",
+        "coverageReporters": [
+            "json",
+            "text"
+        ],
+        "reporters": [
+            "default",
+            [
+                "jest-junit",
+                {
+                    "outputDirectory": "coverage",
+                    "outputName": "junit.xml",
+                    "classNameTemplate": "{classname}-{title}",
+                    "titleTemplate": "{classname}-{title}",
+                    "ancestorSeparator": " > ",
+                    "usePathForSuiteName": "true"
+                }
+            ]
+        ]
+    }
+}

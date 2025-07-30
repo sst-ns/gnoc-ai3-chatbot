@@ -1,0 +1,15 @@
+{
+  "name": "gnoc-quick_chart_visualizer-tool",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "uuid": "^11.1.0"
+  }
+}

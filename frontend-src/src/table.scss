@@ -1,0 +1,42 @@
+.Mui-even {
+    background: #edf5ff;
+}
+
+.Mui-odd {
+    background: transparent;
+}
+
+.MuiDataGrid-columnHeaders {
+    background: #212a55;
+    color: #fff;
+    font-size: 16px;
+
+    .MuiDataGrid-columnHeader--sortable {
+        border-right: 2px solid #fff;
+    }
+}
+
+.MuiDataGrid-columnHeaderTitle,
+.MuiDataGrid-cellContent {
+    white-space: normal !important;
+
+}
+
+.MuiDataGrid-cell,
+.MuiDataGrid-columnHeaderTitle,
+.MuiDataGrid-columnHeaderTitleContainer {
+    justify-content: start !important;
+}
+
+.MuiDataGrid-columnHeaderTitle {
+    line-height: 20px;
+}
+
+.MuiDataGrid-iconButtonContainer>button {
+    color: #fff;
+}
+
+.MuiDataGrid-root {
+    box-shadow: 0px 2px 1px -1px rgba(0, 0, 0, 0.2), 0px 1px 1px 0px rgba(0, 0, 0, 0.14), 0px 1px 3px 0px rgba(0, 0, 0, 0.12);
+    background: #fff;
+}

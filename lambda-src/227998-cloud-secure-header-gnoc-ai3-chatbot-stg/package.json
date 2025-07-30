@@ -1,0 +1,26 @@
+{
+  "name": "gnoc-ai3-dashboard-Secure-Header_AIR227998",
+  "version": "1.0.0",
+  "description": "TODO: Give a short introduction of your project. Let this section explain the objectives or the motivation behind this project.",
+  "main": "lib/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git@ssh.dev.azure.com:v3/accenturecio08/EnterpriseArchitecture_2641/2731_secureheader_originresponse"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^14.14.43",
+    "npm-pack-zip": "^1.2.9",
+    "typescript": "^3.9.9"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pack": "npm-pack-zip",
+    "postbuild": "npm run pack"
+  },
+  "files": [
+    "env.json",
+    "/lib/index.js"
+  ]
+}

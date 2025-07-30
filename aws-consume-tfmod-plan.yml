@@ -1,0 +1,316 @@
+parameters:
+- name: AwsEnv 
+  default: ''
+- name: foldername 
+  default: ''
+- name: repositoryName
+  default: ''
+- name: awsBackendStorageContainerBlobKey
+  default: ''
+- name: awsBackendStorageContainer
+  default: ''
+- name: awsBackendContainer
+  default: ''
+- name: artifactName
+  default: ''
+- name: varFileName
+  default: ''
+- name: WORKSPACE_FILES
+  default: 'default'
+
+stages:
+- stage: aws_${{ parameters.artifactName }}_${{ parameters.AwsEnv }}_TF_plan
+  jobs:
+  - job: aws_${{ parameters.artifactName }}_${{ parameters.AwsEnv }}_TF_plan
+    pool:
+      vmImage: $(vmUbuntuImage)
+    container:
+      image: tf-container-tf1.7.5-aws2.0:20240426 #acr5064.azurecr.io/tf-container-tf1.0.2-aws2.0:latest
+      endpoint: CIO-5064-Tfmod-Pull-ACR
+    steps:
+      - checkout: self
+        persistCredentials: true
+      - task: DownloadBuildArtifacts@0
+        displayName: 'Download Lambda Build Artifacts'
+        inputs:
+          buildType: 'current'
+          downloadType: 'single'
+          artifactName: 'lambda-packages'
+          downloadPath: '$(Pipeline.Workspace)'
+      - task: DownloadBuildArtifacts@0
+        displayName: 'Download Frontend Build Artifacts'
+        inputs:
+          buildType: 'current'
+          downloadType: 'single'
+          artifactName: 'frontend-packages'
+          downloadPath: '$(Build.SourcesDirectory)/${{ parameters.foldername }}'
+      - task: Powershell@2
+        displayName: 'Discover Lambda Packages'
+        name: discover_lambdas
+        inputs:
+          targetType: inline
+          script: |
+            $lambdaPath = "$(Pipeline.Workspace)/lambda-packages"
+            Write-Host "Searching for Lambda packages in: $lambdaPath"
+            
+            if (Test-Path $lambdaPath) {
+              $lambdaFiles = Get-ChildItem -Path $lambdaPath -Filter "*.zip" | Select-Object -ExpandProperty Name
+              $lambdaListJson = @($lambdaFiles) | ConvertTo-Json -Compress -AsArray
+              Write-Host "##vso[task.setvariable variable=LAMBDA_FILES]$lambdaListJson"
+              Write-Host "##vso[task.setvariable variable=LAMBDA_PATH]$lambdaPath"
+
+              if ($lambdaFiles.Count -gt 0) {
+                Write-Host "Found Lambda files: $lambdaListJson"
+              } else {
+                Write-Host "No Lambda files found in: $lambdaPath"
+              }
+            }   
+      - task: Powershell@2
+        displayName: 'Verify Frontend Build'
+        inputs:
+          targetType: inline
+          script: |
+            $frontendPath = "$(Build.SourcesDirectory)/${{ parameters.foldername }}/frontend-packages"
+            Write-Host "Verifying frontend build at: $frontendPath"
+            
+            if (Test-Path $frontendPath) {
+              Write-Host "##vso[task.setvariable variable=FRONTEND_PATH]frontend-packages"
+              Write-Host "Frontend build verified at: $frontendPath"
+              
+              # Optional: Show build contents for verification
+              $buildItems = Get-ChildItem -Path $frontendPath -Recurse | Select-Object -First 5
+              if ($buildItems) {
+                Write-Host "Frontend build contents:"
+                $buildItems | ForEach-Object { Write-Host "  $($_.FullName)" }
+              }
+            } else {
+              Write-Error "Frontend build artifacts not found at: $frontendPath"
+              exit 1
+            }   
+      - task: CIODevOps.azuredevOps-build-agent-cf-cli-config-file-generator.custom-build-release-task.AzureDevOps Build Agent TF Cli Config File Generator@1
+        displayName: 'AzureDevOps Build Agent TF Cli Config File Generator'
+        enabled: true
+      - task: Powershell@2
+        displayName: Prepare for terraform registry staging
+        continueOnError: false
+        timeoutInMinutes: 2
+        inputs:
+          targetType: inline
+          script: |
+            Write-Host "[Debug]Agent OS is: $env:AGENT_OS"
+            # For Windows Build Agentww
+            if ($env:AGENT_OS -match '^.*Windows.*$') {
+              Write-Host "[Debug]...........Windows Agent Detected........"
+              if (Test-Path "$($env:APPDATA)/terraform.rc") {
+                Write-Host "[Debug]...........Prepare for terraform registry staging........"
+                $oriTfRcFilePath = "$($env:APPDATA)/terraform.rc"
+                $oriTfRcStr = Get-Content "$oriTfRcFilePath" -Raw
+                $oriTfRcStr = $oriTfRcStr -replace "acnciotfregistry.accenture.com", "acnciotfregistry.ciostage.accenture.com"
+                Add-Content $oriTfRcFilePath "`n $oriTfRcStr"
+                Write-Host "[Debug]...........Print terraform.rc........"
+                Get-Content "$($env:APPDATA)/terraform.rc"
+              }
+            # For Linux Build Agent
+            } ElseIf ($env:AGENT_OS -match '^.*Linux.*$') {
+              Write-Host "[Debug]...........Linux Agent Detected........"
+              if (Test-Path "~/.terraformrc") {
+                Write-Host "[Debug]...........Prepare for terraform registry staging........"
+                $oriTfRcFilePath = "~/.terraformrc"
+                $oriTfRcStr = Get-Content "$oriTfRcFilePath" -Raw
+                $oriTfRcStr = $oriTfRcStr -replace "acnciotfregistry.accenture.com", "acnciotfregistry.ciostage.accenture.com"
+                Add-Content $oriTfRcFilePath "`n $oriTfRcStr"
+                Write-Host "[Debug]...........Print .terraformrc........"
+                Get-Content "~/.terraformrc"
+              }
+            } else {
+              Write-Error "[Error]*********Agent OS is neither Windows nor Linux: $env:AGENT_OS **********"
+            }
+        enabled: true
+
+      - task: CIODevOps.hashicorp-vault-build-release-task-prd.custom-build-release-task.HashiVaultExt@0
+        displayName: 'HashiCorp Vault Credentials - Dev'
+        name: hashi_credential
+        inputs:
+          HashiEndpoint: '227998-NPD-HashiVault'
+          return: secret
+          secretEnv: nonProd
+          engineType: azure
+          azureRoleSetName: 'npd-227998-iac-tf-aws-2.0'
+        timeoutInMinutes: 1
+        retryCountOnTaskFailure: 2
+
+      - task: CIODevOps.hashicorp-vault-build-release-task-prd.custom-build-release-task.HashiVaultExt@0
+        displayName: 'HashiCorp Vault Credentials - AWS2.0'
+        name: hashi_credential_vault
+        inputs:
+          HashiEndpoint: '227998-NPD-HashiVault'
+          return: secret
+          secretEnv: nonProd
+          engineType: aws
+          awsRoleSetName: 'npd-227998-iac-aws-2.0'
+        timeoutInMinutes: 1
+        retryCountOnTaskFailure: 2
+
+      - task: DownloadSecureFile@1
+        name: cert
+        displayName: downloadCert
+        inputs:
+          secureFile: '227998-gnoc-chatbot-spa-stg-sslcert.pem'
+
+      - task: DownloadSecureFile@1
+        name: key
+        displayName: downloadKey
+        inputs:
+          secureFile: '227998-gnoc-chatbot-spa-stg-privatekey.key'
+
+      - task: DownloadSecureFile@1
+        name: chain
+        displayName: downloadChain
+        inputs:
+          secureFile: '227998-gnoc-chatbot-spa-stg-certchain.pem'
+
+      - task: DownloadSecureFile@1
+        name: pubkey
+        displayName: downloadPubKey
+        inputs:
+          secureFile: '227998-gnoc-ai3-dashboard-stg-publickey.pem'
+
+
+      - task: PowerShell@2
+        displayName: Copy PEMs to infra folder
+        inputs:
+          targetType: 'inline'
+          script: |
+            $infraFolder = "$(Build.SourcesDirectory)/infra"
+            New-Item -ItemType Directory -Path $infraFolder -Force
+
+            Copy-Item "$(cert.secureFilePath)"      "$infraFolder/227998-gnoc-chatbot-spa-stg-sslcert.pem"
+            Copy-Item "$(key.secureFilePath)"       "$infraFolder/227998-gnoc-chatbot-spa-stg-privatekey.key"
+            Copy-Item "$(chain.secureFilePath)"     "$infraFolder/227998-gnoc-chatbot-spa-stg-certchain.pem"
+            Copy-Item "$(pubkey.secureFilePath)"    "$infraFolder/227998-gnoc-ai3-dashboard-stg-publickey.pem"
+
+
+      - task: Powershell@2
+        displayName: Terraform Init
+        name: tf_init
+        continueOnError: false
+        timeoutInMinutes: 15
+        inputs:
+          targetType: inline
+          script: |
+            $env:ARM_CLIENT_ID = "$(hashi_credential.AzClientID)"
+            $env:ARM_CLIENT_SECRET = "$(hashi_credential.AzClientSecret)"
+            $env:ARM_TENANT_ID = "e0793d39-0939-496d-b129-198edd916feb"
+            $env:ARM_SUBSCRIPTION_ID = "3de4faec-c7e9-4255-95af-ab63b5e7c44a"
+            $cmdArgs = @(
+                "init"
+                "-no-color"
+                "-upgrade"
+                "-backend-config=`"subscription_id=3de4faec-c7e9-4255-95af-ab63b5e7c44a`""
+                "-backend-config=`"resource_group_name=rg-506405sharedservices`""
+                "-backend-config=`"storage_account_name=${{ parameters.awsBackendStorageContainer }}`""
+                "-backend-config=`"key=${{ parameters.awsBackendStorageContainerBlobKey }}`""
+                "-backend-config=`"container_name=${{ parameters.awsBackendContainer }}`"" 
+                "-backend-config=`"use_azuread_auth=true`""
+            )
+
+
+            Write-Host  $cmdArgs
+            echo "yes" | terraform $cmdArgs
+          failOnStderr: true # Optional
+          workingDirectory: $(Build.SourcesDirectory)/${{ parameters.foldername }}
+        enabled: true
+
+      - task: Powershell@2
+        displayName: Terraform Validate
+        name: tf_validate
+        continueOnError: false
+        timeoutInMinutes: 2
+        inputs:
+          targetType: inline
+          script: |
+              $cmdArgs = @(
+                "validate"
+                "-no-color"
+              )
+              terraform $cmdArgs
+          failOnStderr: true # Optional
+          workingDirectory: $(Build.SourcesDirectory)/${{ parameters.foldername }}
+        enabled: true
+
+      - task: PowerShell@2
+        name: compliance_test
+        displayName: 'Terraform Compliance Test'
+        inputs:
+          targetType: inline
+          script: |
+            # Execute Pester Test, write results as NUnit to publish into the build
+            $result = Invoke-Pester -Path ("/sharedfolder/test/moduleconsume-tf12.ps1") `
+            -OutputFormat 'NUnitXML' -OutputFile (Join-Path $Env:COMMON_TESTRESULTSDIRECTORY 'workspace.parameters.tests.xml') `
+            -Show 'All' -PassThru
+            $result.TestResult | Where-Object { $_.Result -eq 'Failed' -or $_.Result -eq 'Pending' } | ForEach-Object {
+              $test = $_
+              switch ($test.Result) {
+                'Failed' {
+                  $msg = "$($test.Describe) | $($test.Context) | $($test.Name) | $($test.FailureMessage)"
+                  $line = ""
+                  $file = ""
+                  if ($test.StackTrace -Match '<ScriptBlock>,\s*(?<file>.+(?<=\.ps1)):\s*line\s*(?<line>\d+)') {
+                    $line = $Matches.line
+                    $file = $Matches.file
+                  }
+                  Write-Error "Compliance tests failed : $msg"
+                  break;
+                }
+                'Pending' {
+                  $msg = "$($test.Describe) | $($test.Context) | $($test.Name) : Is Pending Implementation"
+                  Write-Warning "Compliance tests has few warning : $msg" 
+                  break;
+                }
+              }
+            }
+            if ($result.FailedCount -gt 0) {
+              exit $result.FailedCount
+            }
+          workingDirectory: $(Build.SourcesDirectory)/${{ parameters.foldername }}
+        enabled: false
+
+
+      - task: Powershell@2
+        displayName: Terraform Plan
+        name: tf_plan
+        continueOnError: false
+        timeoutInMinutes: 2
+        inputs:
+          targetType: inline
+          script: |
+            Get-ChildItem
+            $env:ARM_CLIENT_ID = "$(hashi_credential.AzClientID)"
+            $env:ARM_CLIENT_SECRET = "$(hashi_credential.AzClientSecret)"
+            $env:ARM_TENANT_ID = "e0793d39-0939-496d-b129-198edd916feb"                            
+            $env:ARM_SUBSCRIPTION_ID = "3de4faec-c7e9-4255-95af-ab63b5e7c44a"
+            $Env:AWS_ACCESS_KEY_ID     = "$(hashi_credential_vault.AWSAccessKey)"
+            $Env:AWS_SECRET_ACCESS_KEY = "$(hashi_credential_vault.AWSSecretKey)"
+            $Env:AWS_DEFAULT_REGION    = "us-east-1"
+            $Env:TF_VAR_access_key  = "$(hashi_credential_vault.AWSAccessKey)"
+            $Env:TF_VAR_secret_key  = "$(hashi_credential_vault.AWSSecretKey)"
+            $Env:TF_VAR_lambda_files = '$(LAMBDA_FILES)'
+            $Env:TF_VAR_lambda_path = '$(LAMBDA_PATH)'
+            $Env:TF_VAR_frontend_path = '$(FRONTEND_PATH)'
+            $Env:TF_VAR_private_key= "$(227998-private_key-gnoc-ai3-dashboard-stg)"
+            ForEach ($wrkspace in $ENV:WORKSPACE_FILES -split "\s+"){
+              Write-Host "Wrkspace: $wrkspace"
+              $cmdArgs = @(
+                "plan"
+                "-var-file=${{ parameters.varFileName }}"
+                "-lock=true"
+                "-input=false"
+              )
+              terraform $cmdArgs
+            }
+          failOnStderr: true # Optional
+          workingDirectory: $(Build.SourcesDirectory)/${{ parameters.foldername }}
+        enabled: true
+
+
+

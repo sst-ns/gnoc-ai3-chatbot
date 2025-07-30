@@ -1,0 +1,18 @@
+{
+  "name": "gnoc-extract-lambda",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@langchain/aws": "^0.1.9",
+    "@langchain/core": "^0.3.53",
+    "aws-sdk": "^2.1692.0",
+    "mammoth": "^1.9.0",
+    "zod": "^3.24.4"
+  }
+}

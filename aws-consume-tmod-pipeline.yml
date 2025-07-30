@@ -1,0 +1,243 @@
+name: 0.1.$(Build.BuildId)
+
+trigger:
+  tags:
+    include:
+    - generate-*
+    - modify-*
+
+variables:
+  - name: vmUbuntuImage
+    value: ubuntu-latest
+  - group: cio-cloud-aws-2.0-common-227998
+
+stages:
+- stage: BuildLambdas
+  displayName: 'Build and Package Node.js Lambda Functions'
+  jobs:
+  - job: BuildLambdas
+    pool:
+      vmImage: $(vmUbuntuImage)
+    steps:
+    - checkout: self
+      persistCredentials: true
+
+    - task: NodeTool@0
+      displayName: 'Install Node.js'
+      inputs:
+        versionSpec: '18.x'
+
+    - task: PowerShell@2
+      displayName: 'Build and Package All Node.js Lambda Functions'
+      inputs:
+        targetType: 'inline'
+        script: |
+          # Automatically detect all subdirectories in lambda-src
+          $lambdaSrcRoot = "$(Build.SourcesDirectory)/lambda-src"
+          $lambdaFunctions = Get-ChildItem -Path $lambdaSrcRoot -Directory | Select-Object -ExpandProperty Name
+
+          # Create lambdas output directory
+          $lambdaOutputDir = "$(Build.SourcesDirectory)/lambdas-build"
+          if (!(Test-Path $lambdaOutputDir)) {
+            New-Item -ItemType Directory -Path $lambdaOutputDir -Force
+          }
+
+          # Process each Node.js lambda function
+          foreach ($lambdaName in $lambdaFunctions) {
+            Write-Host "=================================================="
+            Write-Host "Processing Node.js Lambda: $lambdaName"
+            Write-Host "=================================================="
+            
+            $lambdaSourceDir = "$lambdaSrcRoot/$lambdaName"
+            
+            if (!(Test-Path $lambdaSourceDir)) {
+              Write-Warning "Source directory not found for $lambdaName at $lambdaSourceDir. Skipping..."
+              continue
+            }
+            
+            # Navigate to lambda source directory
+            Set-Location $lambdaSourceDir
+            Write-Host "Current directory: $(Get-Location)"
+            Write-Host "Building Node.js Lambda: $lambdaName"
+            
+            # Install dependencies if package.json exists
+            if (Test-Path "package.json") {
+              Write-Host "Installing dependencies for $lambdaName..."
+              npm ci --production
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "npm install failed for $lambdaName"
+                exit 1
+              }
+            } else {
+              Write-Host "No package.json found for $lambdaName, skipping npm install"
+            }
+            
+            # Create zip package
+            Write-Host "Creating zip package for $lambdaName..."
+            $zipPath = "$lambdaOutputDir/$lambdaName.zip"
+            Compress-Archive -Path "$lambdaSourceDir/*" -DestinationPath $zipPath -Force
+            
+            if (Test-Path $zipPath) {
+              $fileSize = (Get-Item $zipPath).Length / 1MB
+              Write-Host "✅ Successfully created $lambdaName.zip (Size: $([math]::Round($fileSize, 2)) MB)"
+            } else {
+              Write-Error "❌ Failed to create zip package for $lambdaName"
+              exit 1
+            }
+          }
+
+          # List all created packages
+          Write-Host "=================================================="
+          Write-Host "Node.js Lambda Packages Summary:"
+          Write-Host "=================================================="
+          Get-ChildItem "$lambdaOutputDir/*.zip" | ForEach-Object {
+            $sizeKB = [math]::Round($_.Length / 1KB, 2)
+            Write-Host "📦 $($_.Name) - $sizeKB KB"
+          }
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Lambda Artifacts'
+      inputs:
+        PathtoPublish: '$(Build.SourcesDirectory)/lambdas-build'
+        ArtifactName: 'lambda-packages'
+        publishLocation: 'Container'
+
+    - task: DownloadSecureFile@1
+      displayName: downloadCert
+      inputs:
+        secureFile: '227998-gnoc-chatbot-spa-stg-sslcert.pem'
+
+    - task: DownloadSecureFile@1
+      displayName: downloadKey
+      inputs:
+        secureFile: '227998-gnoc-chatbot-spa-stg-privatekey.key'
+
+    - task: DownloadSecureFile@1
+      displayName: downloadChain
+      inputs:
+        secureFile: '227998-gnoc-chatbot-spa-stg-certchain.pem'
+
+    - task: DownloadSecureFile@1
+      name: pubkey
+      displayName: downloadPubKey
+      inputs:
+        secureFile: '227998-gnoc-ai3-dashboard-stg-publickey.pem'
+
+- stage: BuildFrontend
+  displayName: 'Build and Package Frontend'
+  jobs:
+  - job: BuildFrontend
+    pool:
+      vmImage: $(vmUbuntuImage)
+    steps:
+    - checkout: self
+      persistCredentials: true
+
+    - task: NodeTool@0
+      displayName: 'Install Node.js'
+      inputs:
+        versionSpec: '18.x'
+
+    - task: PowerShell@2
+      displayName: 'Build Frontend Application'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $frontendSrcRoot = "$(Build.SourcesDirectory)/frontend-src"
+          $frontendOutputDir = "$(Build.SourcesDirectory)/frontend-build/secure"
+          
+          Write-Host "=================================================="
+          Write-Host "Building Frontend Application"
+          Write-Host "=================================================="
+          
+          if (!(Test-Path $frontendSrcRoot)) {
+            Write-Error "Frontend source directory not found at $frontendSrcRoot"
+            exit 1
+          }
+          
+          # Navigate to frontend source directory
+          Set-Location $frontendSrcRoot
+          Write-Host "Current directory: $(Get-Location)"
+          
+          # Install dependencies if package.json exists
+          if (Test-Path "package.json") {
+            Write-Host "Installing frontend dependencies..."
+            npm ci
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "npm install failed for frontend"
+              exit 1
+            }
+            
+            # Build the frontend application
+            Write-Host "Building frontend application..."
+            npm run build
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Frontend build failed"
+              exit 1
+            }
+          } else {
+            Write-Error "No package.json found in frontend-src directory"
+            exit 1
+          }
+          
+          # Create frontend output directory and copy build files
+          if (!(Test-Path $frontendOutputDir)) {
+            New-Item -ItemType Directory -Path $frontendOutputDir -Force
+          }
+          
+          # Copy build output (assuming it's in 'dist' or 'build' directory)
+          $buildDirs = @("dist", "build", "out")
+          $buildFound = $false
+          
+          foreach ($buildDir in $buildDirs) {
+            if (Test-Path $buildDir) {
+              Write-Host "Copying frontend build from $buildDir to $frontendOutputDir"
+              Copy-Item -Path "$buildDir/*" -Destination $frontendOutputDir -Recurse -Force
+              $buildFound = $true
+              break
+            }
+          }
+          
+          if (!$buildFound) {
+            Write-Error "No build output directory found (checked: dist, build, out)"
+            exit 1
+          }
+          
+          Write-Host "✅ Frontend build completed successfully"
+          Get-ChildItem $frontendOutputDir -Recurse | Select-Object Name, Length | Format-Table
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Frontend Artifacts'
+      inputs:
+        PathtoPublish: '$(Build.SourcesDirectory)/frontend-build'
+        ArtifactName: 'frontend-packages'
+        publishLocation: 'Container'
+
+- template: aws-consume-tfmod-plan.yml
+  parameters:
+    AwsEnv: 'npd'
+    foldername: 'infra'
+    repositoryName: 'gnoc-chatbot_AI_AIR227998'
+    awsBackendStorageContainerBlobKey: 'cio/227998/aws2/spa2/gnoc-chatbot/001-001-project-infra.tfstate'
+    awsBackendStorageContainer: 'st506405use2tfstate'
+    awsBackendContainer: 'cio-proj227998npdtfstate'
+    artifactName: 'gnocbotaitest'
+    varFileName: 'aws-npd.tfvars'
+    WORKSPACE_FILES: $(WORKSPACE_FILES)
+    
+- template: aws-consume-tfmod-apply.yml
+  parameters:
+    AwsEnv: 'npd'
+    foldername: 'infra'
+    repositoryName: 'gnoc-chatbot_AI_AIR227998'
+    condition: '' 
+    dependsOn: ''
+    awsBackendStorageContainerBlobKey: 'cio/227998/aws2/spa2/gnoc-chatbot/001-001-project-infra.tfstate'
+    awsBackendStorageContainer: 'st506405use2tfstate'
+    awsBackendContainer: 'cio-proj227998npdtfstate'
+    artifactName: 'gnocbotaitest'
+    varFileName: 'aws-npd.tfvars'
+    WORKSPACE_FILES: $(WORKSPACE_FILES)
+
+
+

@@ -1,0 +1,15 @@
+{
+  "name": "gnoc-ata-integaration",
+  "version": "1.0.0",
+  "description": "action for Amethyst agent",
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "mathjs": "^14.6.0"
+  }
+}
