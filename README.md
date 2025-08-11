@@ -1,6 +1,6 @@
 # GNOC AI3 Chatbot and Incident Management Dashboard
 
-This project is a full-stack application that includes a chatbot, an incident management dashboard, and RCA docx and MDB excel uploading capabilities. It has a React-based frontend, a serverless backend using AWS Lambda, and infrastructure as code using Terraform.
+This project is a full-stack application that includes a chatbot, an incident management dashboard, and file uploading capabilities. It has a React-based frontend, a serverless backend using AWS Lambda, and infrastructure as code using Terraform.
 
 ## Architecture
 
@@ -38,6 +38,8 @@ The application is composed of the following main components:
 *   AWS CLI
 
 ### Installation
+
+These instructions are for setting up a local development environment. The CI/CD pipeline also uses these steps to ensure consistency.
 
 1.  **Clone the repository:**
 
