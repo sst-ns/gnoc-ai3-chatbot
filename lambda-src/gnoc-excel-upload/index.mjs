@@ -187,7 +187,7 @@ const batchWriteToDynamoDB = async (data, tableName, sendToClient) => {
     const progress = 80 + (i / data.length) * 15; // 80% to 95%
     await sendToClient({ 
       percentage: Math.round(progress), 
-      message: `Saving to database... ${totalProcessed}/${data.length} records processed` 
+      message: `Saving incidents... ${totalProcessed} of ${data.length} completed` 
     });
   }
 
@@ -218,15 +218,15 @@ export const handler = async (event) => {
       return { statusCode: 400, body: JSON.stringify({ error: 'Filename is required' }) };
     }
 
-    await sendToClient({ percentage: 10, message: `Starting extraction for "${fileName}"...` });
+    await sendToClient({ percentage: 10, message: `Starting to process "${fileName}"...` });
 
     const s3Response = await s3Client.send(new GetObjectCommand({ Bucket: bucketName, Key: fileName }));
 
-    await sendToClient({ percentage: 25, message: `File downloaded from S3. Preparing for JSON conversion...` });
+    await sendToClient({ percentage: 25, message: `Reading your file...` });
 
     let data = await parseExcelToJson(s3Response);
 
-    await sendToClient({ percentage: 40, message: `JSON conversion successful. Processing data...` });
+    await sendToClient({ percentage: 40, message: `Analyzing incident data...` });
 
     let processedData = normalizeData(data);
     console.log(processedData)
@@ -236,15 +236,15 @@ export const handler = async (event) => {
     const existingRcaSet = await getExistingRcaIncidentNumbers(allIncidentNumbers, tableName);
     processedData = processedData.filter(r => !existingRcaSet.has(r.Incident_Number));
 
-    await sendToClient({ percentage: 80, message: `Data filtered. Saving to database...` });
+    await sendToClient({ percentage: 80, message: `Preparing ${processedData.length} incidents for import...` });
 
     const totalProcessed = await batchWriteToDynamoDB(processedData, tableName, sendToClient);
-    await sendToClient({ percentage: 95, message: `Database save complete. Cleaning up...` });
+    await sendToClient({ percentage: 95, message: `Finalizing import...` });
 
     await deleteStatsCache(bucketName);
     await sendToClient({
       percentage: 100,
-      message: `Extraction complete for "${fileName}". Total records processed: "${totalProcessed}".`,
+      message: `✅ Successfully imported ${totalProcessed} incidents from "${fileName}"`,
     });
 
     return { statusCode: 200 };
@@ -253,7 +253,7 @@ export const handler = async (event) => {
     console.error('Error processing file:', error);
     await sendToClient({
       percentage: 100,
-      error: `Extraction failed for "${fileName}".`,
+      error: `❌ Failed to process "${fileName}". Please try again or contact support.`,
       details: error.message,
     });
     return {
