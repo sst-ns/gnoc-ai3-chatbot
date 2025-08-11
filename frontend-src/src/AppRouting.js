@@ -8,28 +8,28 @@ const AppRouting = () => {
   let arr = [
     {
       path: "/",
-      name: "Overview",
+      name: "Dashboard",
       element: VulnerabilityOverview,
       exact: true,
       authenticated: true,
     },
     {
-      path: "/overview",
-      name: "Overview",
+      path: "/dashboard",
+      name: "Dashboard",
       element: VulnerabilityOverview,
       authenticated: true,
     },
     {
-      path: "/users",
-      name: "Users",
+      path: "/upload",
+      name: "Upload",
       element: Users,
-      authenticated: context.Role !== "User",
+      authenticated: true,
     },
     {
-      path: "/logs",
-      name: "Logs",
+      path: "/chatbot",
+      name: "Chatbot",
       element: Logs,
-      authenticated: context.Role !== "User" && context.Role !== "BillingPOC",
+      authenticated: true,
     },
     {
       path: "/testadmin",

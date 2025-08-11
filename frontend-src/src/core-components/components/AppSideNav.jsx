@@ -14,6 +14,8 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import SecLogo from "../../assets/logos/sard.png";
 import AiLogo from "../../assets/logos/ai3logo.png";
+import AiLogo1 from "../../assets/logos/gnoc_ai3_sard_dimensions.svg";
+// import AiLogo2 from "../../assets/logos/gnoc_ai3_sard_dimensions (1).svg";
 
 let menuList = SideMenuList;
 
@@ -47,7 +49,7 @@ const AppSideNav = () => {
                   m: 1,
                   borderRadius: "5px",
                   background: location.pathname.includes(text?.path)
-                    ? "#212a55"
+                    ? "#370467"
                     : "transparent",
                   color: location.pathname.includes(text?.path)
                     ? "#fff"
@@ -55,7 +57,7 @@ const AppSideNav = () => {
                   pl: text?.id?.includes("child") ? 5 : 0,
                   "&.MuiButtonBase-root:hover": {
                     color: "#fff",
-                    bgcolor: "#212a55",
+                    bgcolor: "#370467",
                   },
                   borderBottom: text?.id?.includes("parent")
                     ? "2px solid black"
@@ -120,7 +122,7 @@ const AppSideNav = () => {
         SARD
       </Typography> */}
       {/* <img src={SecLogo} className="sec-logo" /> */}
-      <img src={AiLogo} className="sec-logo" />
+      <img src={AiLogo1} className="sec-logo" />
 
       <Divider />
 

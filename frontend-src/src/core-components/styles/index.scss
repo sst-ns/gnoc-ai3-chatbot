@@ -6,6 +6,7 @@
     margin: 6rem 2rem 2rem;
     min-height: calc(100vh - 12rem);
     overflow: auto;
+    background: linear-gradient(275deg, #c9b5d6 0%, #d9cce6 100%) !important;
     // padding: 3rem 1rem;
     // background: #ffffffe4;
     // border-radius: 2px;
@@ -18,7 +19,8 @@
 .app-sidenav {
     .MuiDrawer-paper {
         width: inherit;
-        background: linear-gradient(275deg, #e6dcff 0%, #F3EFFF 100%) !important;
+        background: linear-gradient(275deg, #a469db 0%, #F3EFFF 100%) !important;  //changing sidebar colour 
+        overflow-x: hidden !important; 
         // background-image: url("../../assets/images/back4.jpg");
         // background-size: cover;
     }
@@ -34,6 +36,7 @@
     .MuiCollapse-vertical>.MuiList-root>.MuiButtonBase-root {
         padding-left: 20px !important;
     }
+
 }
 
 #account-menu>.MuiPaper-root {

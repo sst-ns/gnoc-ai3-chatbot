@@ -24,7 +24,7 @@ const AppContent = (props) => {
                   id={e.name}
                   element={
                     e.path === "/" ? (
-                      userName && <Navigate to="/overview" replace />
+                      userName && <Navigate to="/dashboard" replace />
                     ) : (
                       <e.element />
                     )

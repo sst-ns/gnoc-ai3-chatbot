@@ -4,6 +4,8 @@ import {
   Home,
   Dashboard,
   VerifiedUserSharp,
+  CloudUpload,  // New icon for Upload Files
+  Chat,       
 } from "@mui/icons-material";
 import { useContext } from "react";
 import { Context } from "../components/AppLayout";
@@ -22,21 +24,21 @@ const SideMenuList = () => {
         {
           menu: "Dashboard",
           icon: Dashboard,
-          path: "/overview",
+          path: "/dashboard",
           id: "child1",
           show: true,
         },
-        {
-          menu: "Ask the Bot",
-          icon: History,
-          path: "/logs",
+         {
+          menu: "Ask The Bot",
+          icon: Chat,
+          path: "/chatbot",
           id: "child3",
           show: context.Role !== "User" && context.Role !== "BillingPOC",
         },
         {
           menu: "Upload Files",
-          icon: PersonAdd,
-          path: "/users",
+          icon: CloudUpload,
+          path: "/upload",
           id: "child2",
           show: context.Role !== "User",
         },

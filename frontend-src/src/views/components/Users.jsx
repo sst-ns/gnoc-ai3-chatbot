@@ -13,6 +13,27 @@ import {
   Box,
   Typography,
   Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Chip,
+  LinearProgress,
+  Paper,
+  Fade,
+  Slide,
+  IconButton,
+  Tooltip,
+  Card,
+  CardContent,
+  Grid,
+  Alert,
+  Snackbar,
 } from "@mui/material";
 import DeleteIcon from '@mui/icons-material/Delete';
 import CategoryIcon from '@mui/icons-material/Category';
@@ -21,6 +42,13 @@ import LinkIcon from '@mui/icons-material/Link';
 import ArticleIcon from '@mui/icons-material/Article';
 import PriorityHighIcon from '@mui/icons-material/PriorityHigh';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorIcon from '@mui/icons-material/Error';
+import InfoIcon from '@mui/icons-material/Info';
+import CloseIcon from '@mui/icons-material/Close';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
+import AddIcon from '@mui/icons-material/Add';
 
 import { useMsal } from "@azure/msal-react";
 import { InteractionStatus } from "@azure/msal-browser";
@@ -29,7 +57,7 @@ import ReactMarkdown from "react-markdown";
 
 const Users = () => {
   const [file, setFile] = useState(null);
-  const [status, setStatus] = useState("No file uploaded");
+  const [status, setStatus] = useState("Ready to upload");
   const [progress, setProgress] = useState(0);
   const [data, setData] = useState([]);
   const [category, setCategorization] = useState("");
@@ -51,7 +79,10 @@ const Users = () => {
   const [customCategory, setCustomCategory] = useState("");
   const [showCustomInput, setShowCustomInput] = useState(false);
   const resetTimeoutRef = useRef(null);
-  const [categories, setCategories] = useState([]); 
+  const [categories, setCategories] = useState([]);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [error, setError] = useState("");
+  const [dragActive, setDragActive] = useState(false);
 
   useEffect(() => {
     if (inProgress !== InteractionStatus.None) return;
@@ -66,27 +97,18 @@ const Users = () => {
         setAccessToken(resp.idToken || resp.accessToken);
       } catch (err) {
         console.error("Token acquisition error:", err);
+        setError("Authentication failed. Please try again.");
       }
     })();
   }, [accounts, inProgress, instance]);
 
-  const inputStyle = {
-    marginLeft: "10px",
-    padding: "6px",
-    width: "80%",
-    borderRadius: "4px",
-    border: "1px solid #ccc",
-    marginTop: "4px"
-  };
-
  useEffect(() => {
   if (!accessToken) return;
-  console.log("🔧 Setting up WebSocket and listeners"); // DEBUG
+  console.log("🔧 Setting up WebSocket and listeners");
   
   const ws = connectWebSocket(accessToken);
    listenForFetch(
       (incidents) => {
-        // Build a category list from incidents (array of incidents or rows)
         let unique = [];
         if (Array.isArray(incidents)) {
           unique = [...new Set(incidents.map(row => row.Category).filter(Boolean))];
@@ -101,9 +123,7 @@ const Users = () => {
     );
 
   listenForExtraction((extractedData) => {
-    console.log("🎯 EXTRACTION CALLBACK TRIGGERED!"); // DEBUG
-    console.log("📊 Received data:", extractedData); // DEBUG
-    console.log("🕒 Current time:", new Date().toLocaleTimeString()); // DEBUG
+    console.log("🎯 EXTRACTION CALLBACK TRIGGERED!");
     
     const combinedData = {
       ...extractedData,
@@ -115,19 +135,16 @@ const Users = () => {
     };
     
     setData(combinedData);
-    setStatus("✅ Extraction complete");
+    setStatus("✅ Upload completed successfully");
     setProgress(100);
-
-    console.log("⏰ Setting 3-second reset timer..."); // DEBUG
+    setUploadSuccess(true);
 
     if(resetTimeoutRef.current){
       clearTimeout(resetTimeoutRef.current);
-      console.log("Cleared existing timeout"); 
     }
 
     resetTimeoutRef.current = setTimeout(() => {
-      console.log("EXECUTING AUTO RESET NOW");
-      setStatus("No file uploaded");
+      setStatus("Ready to upload");
       setProgress(0);
       setFile(null);
       setCategorization("");
@@ -137,287 +154,559 @@ const Users = () => {
       setPriority("");
       setCustomCategory("");
       setShowCustomInput(false);
-    },3000);
-
-    console.log("Reset timer set witn ID:", resetTimeoutRef.current);
+      setUploadSuccess(false);
+    },5000);
   });
-    listenForProgress((percent, msg) => {
+
+  listenForProgress((percent, msg) => {
     console.log(`🔄 Component received progress: ${percent}% - ${msg}`);
     setProgress(percent);
-    setStatus(msg || "⏳ Extracting...");
+    setStatus(msg || "⏳ Processing...");
   });
 }, [accessToken]);
 
-
   const handleFileChange = (e) => {
-    setFile(e.target.files[0]);
+    const selectedFile = e.target.files[0];
+    setFile(selectedFile);
+    setError("");
   };
 
-  const handleUpload = () => {
-    if (!file) {
-      alert("Please select a file first");
-      return;
+  const handleDrag = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
     }
-    setStatus("📤 Uploading...");
-    setProgress(0);
-    const metadata = {
-      category,
-      subcategory,
-      rcaLink,
-      knowledgeArticle,
-    };
-    sendUploadRequest(file, metadata);
   };
 
-  const handleCategoryChange = (e) => {
-    const val = e.target.value;
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      setFile(e.dataTransfer.files[0]);
+      setError("");
+    }
+  };
+
+  const handleCategoryChange = (event) => {
+    const val = event.target.value;
     if (val === "__custom__") {
       setShowCustomInput(true);
-      setCategorization(""); // Clear the main category
-      setCustomCategory(""); // Reset custom input
+      setCategorization("");
+      setCustomCategory("");
     } else {
       setShowCustomInput(false);
       setCategorization(val);
-      setCustomCategory(""); // Reset custom input when selecting predefined category
+      setCustomCategory("");
     }
   };
 
   const handleCustomCategorySubmit = () => {
     if (customCategory.trim()) {
       setCategorization(customCategory.trim());
+      setCategories(prev => [...new Set([...prev, customCategory.trim()])].sort());
       setShowCustomInput(false);
     }
   };
 
-  const handleCustomCategoryKeyDown = (e) => {
-    if (e.key === "Enter") {
-      handleCustomCategorySubmit();
+  // Check if file is DOCX
+  const isDocxFile = file && file.name.toLowerCase().endsWith(".docx");
+  
+  // Check if file is XLSX  
+  const isXlsxFile = file && file.name.toLowerCase().endsWith(".xlsx");
+
+  const handleConfigureUpload = () => {
+    if (!file) {
+      setError("Please select a file first");
+      return;
     }
-    if (e.key === "Escape") {
-      setShowCustomInput(false);
-      setCustomCategory("");
+
+    // For XLSX files, upload directly without showing metadata dialog
+    if (isXlsxFile) {
+      handleUpload();
+    } else {
+      // For DOCX files, show metadata dialog
+      setOpenMetadataDialog(true);
     }
+  };
+
+  const handleUpload = () => {
+    if (!file) {
+      setError("Please select a file first");
+      return;
+    }
+
+    // Validation only for DOCX files
+    if (isDocxFile && (!category || !subcategory || !rcaLink)) {
+      setError("Please fill Category, Subcategory and RCA Link for DOCX upload.");
+      return;
+    }
+
+    setOpenMetadataDialog(false);
+    setStatus("📤 Uploading file...");
+    setProgress(0);
+    setError("");
+
+    sendUploadRequest(file, {
+      category: isDocxFile ? category : "",
+      subcategory: isDocxFile ? subcategory : "",
+      rcaLink: isDocxFile ? rcaLink : "",
+      knowledgeArticle: isDocxFile ? knowledgeArticle : "",
+      priority: isDocxFile ? priority : "",
+    });
+  };
+
+  const resetForm = () => {
+    setFile(null);
+    setCategorization("");
+    setSubcategory("");
+    setRcaLink("");
+    setKnowledgeArticle("");
+    setPriority("");
+    setCustomCategory("");
+    setShowCustomInput(false);
+    setError("");
+    setProgress(0);
+    setStatus("Ready to upload");
+  };
+
+  const getStatusIcon = () => {
+    if (uploadSuccess) return <CheckCircleIcon sx={{ color: 'success.main' }} />;
+    if (error) return <ErrorIcon sx={{ color: 'error.main' }} />;
+    if (progress > 0 && progress < 100) return <CloudUploadIcon sx={{ color: 'primary.main' }} />;
+    return <InfoIcon sx={{ color: 'text.secondary' }} />;
+  };
+
+  const getStatusColor = () => {
+    if (uploadSuccess) return 'success';
+    if (error) return 'error';
+    if (progress > 0) return 'primary';
+    return 'inherit';
   };
 
 return (
-    <div>
-      <h2>Upload Files</h2>
+    <Box sx={{ p: 3, maxWidth: 1200, mx: 'auto' }}>
+      <Typography 
+        variant="h4" 
+        component="h1" 
+        gutterBottom 
+        sx={{ 
+          fontWeight: 700,
+          background: 'linear-gradient(135deg, #212A55 0%, #394A8C 100%)',
+          backgroundClip: 'text',
+          WebkitBackgroundClip: 'text',
+          color: 'transparent',
+          mb: 4
+        }}
+      >
+        Upload Documents
+      </Typography>
 
-      <Dialog open={openMetadataDialog} onClose={() => setOpenMetadataDialog(false)}>
-        <Box p={3} width="400px">
-          <Typography variant="h6" gutterBottom style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <UploadFileIcon /> Enter Additional Details
-          </Typography>
-
-          <label style={labelStyle}>
-            <CategoryIcon />
-            {!showCustomInput ? (
-              <select
-                value={category || ""}
-                onChange={handleCategoryChange}
-                style={inputStyle}
-              >
-                <option value="">Select Category</option>
-                {categories.map((cat) => (
-                  <option value={cat} key={cat}>{cat}</option>
-                ))}
-                <option value="__custom__">Add new...</option>
-              </select>
-            ) : (
-              <div style={{ display: "flex", alignItems: "center", width: "80%", gap: "5px" }}>
-                <input
-                  type="text"
-                  style={{ ...inputStyle, marginLeft: 0, width: "100%" ,overflowY: "auto"}}
-                  placeholder="Type new category..."
-                  value={customCategory}
-                  onChange={(e) => setCustomCategory(e.target.value)}
-                  onKeyDown={handleCustomCategoryKeyDown}
-                  onBlur={handleCustomCategorySubmit}
-                  autoFocus
-                />
-                <button 
-                  type="button"
-                  onClick={() => {
-                    setShowCustomInput(false);
-                    setCustomCategory("");
-                  }}
-                  style={{
-                    padding: "4px 8px",
-                    background: "#f0f0f0",
-                    border: "1px solid #ccc",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    fontSize: "12px"
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-          </label>
-
-          <label style={labelStyle}>
-            <DescriptionIcon />
+      {/* Enhanced Upload Card */}
+      <Card 
+        elevation={3}
+        sx={{ 
+          background: 'linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)',
+          border: '1px solid rgba(117, 117, 117, 0.1)',
+          borderRadius: 3,
+          overflow: 'visible'
+        }}
+      >
+        <CardContent sx={{ p: 4 }}>
+          {/* Drag and Drop Zone */}
+          <Paper
+            elevation={0}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+            sx={{
+              border: dragActive 
+                ? '2px dashed #394A8C' 
+                : file 
+                  ? '2px solid #4caf50'
+                  : '2px dashed #e0e0e0',
+              borderRadius: 2,
+              p: 4,
+              textAlign: 'center',
+              backgroundColor: dragActive 
+                ? 'rgba(57, 74, 140, 0.05)' 
+                : file 
+                  ? 'rgba(76, 175, 80, 0.05)'
+                  : 'rgba(0, 0, 0, 0.02)',
+              transition: 'all 0.3s ease',
+              cursor: 'pointer',
+              position: 'relative',
+              '&:hover': {
+                backgroundColor: 'rgba(57, 74, 140, 0.05)',
+                borderColor: '#394A8C'
+              }
+            }}
+            onClick={() => document.getElementById('file-input').click()}
+          >
             <input
-              type="text"
-              placeholder="Subcategory"
-              value={subcategory}
-              onChange={(e) => setSubcategory(e.target.value)}
-              style={inputStyle}
-            />
-          </label>
-
-          <label style={labelStyle}>
-            <LinkIcon />
-            <input
-              type="text"
-              placeholder="RCA Link"
-              value={rcaLink}
-              onChange={(e) => setRcaLink(e.target.value)}
-              style={inputStyle}
-            />
-          </label>
-
-          <label style={labelStyle}>
-            <ArticleIcon />
-            <input
-              type="text"
-              placeholder="Knowledge Article"
-              value={knowledgeArticle}
-              onChange={(e) => setKnowledgeArticle(e.target.value)}
-              style={inputStyle}
-            />
-          </label>
-
-          <label style={labelStyle}>
-            <PriorityHighIcon />
-            <select
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-              style={inputStyle}
-            >
-              <option value="">Select Priority</option>
-              <option value="Critical">Critical</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-            </select>
-          </label>
-
-          <label style={labelStyle}>
-            <UploadFileIcon style={{ marginRight: '9px' }} />
-            <input
+              id="file-input"
               type="file"
-              onChange={(e) => setFile(e.target.files[0])}
-              style={{ marginTop: "8px" }}
+              onChange={handleFileChange}
+              style={{ display: 'none' }}
             />
-          </label>
+            
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              {file ? (
+                <>
+                  <CheckCircleIcon sx={{ fontSize: 48, color: 'success.main' }} />
+                  <Typography variant="h6" color="success.main" fontWeight={600}>
+                    File Selected
+                  </Typography>
+                  <Chip 
+                    icon={<AttachFileIcon />}
+                    label={file.name}
+                    color="success"
+                    variant="outlined"
+                    sx={{ maxWidth: 300 }}
+                  />
+                  {/* File type info */}
+                  <Typography variant="body2" color="text.secondary">
+                    {isDocxFile && "DOCX file - Metadata configuration required"}
+                    {isXlsxFile && "XLSX file - Ready for direct upload"}
+                  </Typography>
+                </>
+              ) : (
+                <>
+                  <CloudUploadIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
+                  <Typography variant="h6" color="text.primary" fontWeight={600}>
+                    {dragActive ? 'Drop your file here' : 'Choose a file or drag it here'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Supports DOCX and XLSX document formats
+                  </Typography>
+                </>
+              )}
+            </Box>
+          </Paper>
 
-          <Box mt={2} display="flex" justifyContent="flex-end">
-            <button onClick={() => setOpenMetadataDialog(false)} style={{ marginRight: "10px" }}>Cancel</button>
-            <button
-              onClick={() => {
-                if (!file) {
-                  alert("Please select a file first.");
-                  return;
-                }
+          {/* Action Buttons - Only show when file is selected */}
+          {file && (
+            <Box sx={{ display: 'flex', gap: 2, mt: 3, justifyContent: 'center' }}>
+              <Button
+                variant="contained"
+                size="large"
+                onClick={handleConfigureUpload}
+                startIcon={<UploadFileIcon />}
+                sx={{
+                  background: 'linear-gradient(135deg, #370467 0%, #370467 100%)',
+                  px: 4,
+                  py: 1.5,
+                  borderRadius: 2,
+                  fontWeight: 600,
+                  boxShadow: '0 4px 15px rgba(57, 74, 140, 0.3)',
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, #1a1f4a 0%, #370467 100%)',
+                    boxShadow: '0 6px 20px rgba(57, 74, 140, 0.4)',
+                  }
+                }}
+              >
+                {isDocxFile ? 'Configure & Upload' : 'Upload File'}
+              </Button>
+              
+              <Button
+                variant="outlined"
+                size="large"
+                onClick={resetForm}
+                startIcon={<CloseIcon />}
+                sx={{ px: 3, py: 1.5, borderRadius: 2 }}
+              >
+                Clear
+              </Button>
+            </Box>
+          )}
 
-                const isDocx = file.name.toLowerCase().endsWith(".docx");
+          {/* Enhanced Status Section */}
+          <Fade in={true}>
+            <Box sx={{ mt: 4 }}>
+              <Paper 
+                elevation={1} 
+                sx={{ 
+                  p: 3, 
+                  borderRadius: 2,
+                  background: 'linear-gradient(135deg, #fafafa 0%, #ffffff 100%)'
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                  {getStatusIcon()}
+                  <Typography variant="h6" color={getStatusColor()}>
+                    Status: {status}
+                  </Typography>
+                </Box>
+                
+                {progress > 0 && (
+                  <Box sx={{ width: '100%' }}>
+                    <LinearProgress 
+                      variant="determinate" 
+                      value={progress} 
+                      sx={{ 
+                        height: 8, 
+                        borderRadius: 4,
+                        backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                        '& .MuiLinearProgress-bar': {
+                          background: uploadSuccess 
+                            ? 'linear-gradient(90deg, #4caf50 0%, #66bb6a 100%)'
+                            : 'linear-gradient(90deg, #212A55 0%, #394A8C 100%)',
+                          borderRadius: 4
+                        }
+                      }} 
+                    />
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1, textAlign: 'center' }}>
+                      {progress.toFixed(0)}% Complete
+                    </Typography>
+                  </Box>
+                )}
+              </Paper>
+            </Box>
+          </Fade>
+        </CardContent>
+      </Card>
 
-                if (isDocx && (!category || !subcategory || !rcaLink)) {
-                  alert("Please fill Category, Subcategory and RCA Link for DOCX upload.");
-                  return;
-                }
+      {/* Enhanced Metadata Dialog - Only for DOCX files */}
+      <Dialog 
+        open={openMetadataDialog} 
+        onClose={() => setOpenMetadataDialog(false)}
+        maxWidth="md"
+        fullWidth
+        TransitionComponent={Slide}
+        TransitionProps={{ direction: "up" }}
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            background: 'linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)',
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          background: 'linear-gradient(135deg, #370467 0%, #370467 100%)',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2
+        }}>
+          <UploadFileIcon />
+          Configure Upload Details - DOCX File
+          <IconButton
+            onClick={() => setOpenMetadataDialog(false)}
+            sx={{ ml: 'auto', color: 'white' }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
 
-                setOpenMetadataDialog(false);
-                setStatus("📤 Uploading...");
-                setProgress(0);
+        <DialogContent sx={{ p: 4 }}>
+          <Alert severity="info" sx={{ mb: 3 }}>
+            The following fields are required for DOCX file uploads
+          </Alert>
+          
+          <Grid container spacing={3} sx={{ mt: 1 }}>
+            {/* Category Selection */}
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth required>
+                <InputLabel>Category *</InputLabel>
+                <Select
+                  value={category || ""}
+                  onChange={handleCategoryChange}
+                  label="Category *"
+                  startAdornment={<CategoryIcon sx={{ mr: 1, color: 'text.secondary' }} />}
+                >
+                  <MenuItem value="">Select Category</MenuItem>
+                  {categories.map((cat) => (
+                    <MenuItem value={cat} key={cat}>{cat}</MenuItem>
+                  ))}
+                  <MenuItem value="__custom__">
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <AddIcon fontSize="small" />
+                      Add New Category
+                    </Box>
+                  </MenuItem>
+                </Select>
+              </FormControl>
 
-                sendUploadRequest(file, {
-                  category,
-                  subcategory,
-                  rcaLink,
-                  knowledgeArticle,
-                  priority,
-                });
-              }}
-              style={uploadBtnStyle}
-            >
-              Upload Now
-            </button>
-          </Box>
-        </Box>
+              {showCustomInput && (
+                <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    placeholder="Enter new category..."
+                    value={customCategory}
+                    onChange={(e) => setCustomCategory(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleCustomCategorySubmit();
+                      if (e.key === "Escape") {
+                        setShowCustomInput(false);
+                        setCustomCategory("");
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button 
+                    variant="contained" 
+                    size="small"
+                    onClick={handleCustomCategorySubmit}
+                  >
+                    Add
+                  </Button>
+                </Box>
+              )}
+            </Grid>
+
+            {/* Subcategory */}
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                required
+                label="Subcategory *"
+                value={subcategory}
+                onChange={(e) => setSubcategory(e.target.value)}
+                InputProps={{
+                  startAdornment: <DescriptionIcon sx={{ mr: 1, color: 'text.secondary' }} />
+                }}
+              />
+            </Grid>
+
+            {/* RCA Link */}
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                required
+                label="RCA Link *"
+                value={rcaLink}
+                onChange={(e) => setRcaLink(e.target.value)}
+                type="url"
+                InputProps={{
+                  startAdornment: <LinkIcon sx={{ mr: 1, color: 'text.secondary' }} />
+                }}
+              />
+            </Grid>
+
+            {/* Knowledge Article */}
+            <Grid item xs={12} md={8}>
+              <TextField
+                fullWidth
+                label="Knowledge Article (Optional)"
+                value={knowledgeArticle}
+                onChange={(e) => setKnowledgeArticle(e.target.value)}
+                InputProps={{
+                  startAdornment: <ArticleIcon sx={{ mr: 1, color: 'text.secondary' }} />
+                }}
+              />
+            </Grid>
+
+            {/* Priority */}
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth>
+                <InputLabel>Priority (Optional)</InputLabel>
+                <Select
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value)}
+                  label="Priority (Optional)"
+                  startAdornment={<PriorityHighIcon sx={{ mr: 1, color: 'text.secondary' }} />}
+                >
+                  <MenuItem value="">Select Priority</MenuItem>
+                  <MenuItem value="Critical">
+                    <Chip label="Critical" color="error" size="small" />
+                  </MenuItem>
+                  <MenuItem value="High">
+                    <Chip label="High" color="warning" size="small" />
+                  </MenuItem>
+                  <MenuItem value="Medium">
+                    <Chip label="Medium" color="info" size="small" />
+                  </MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* File Info */}
+            {file && (
+              <Grid item xs={12}>
+                <Paper sx={{ p: 2, backgroundColor: 'rgba(57, 74, 140, 0.05)' }}>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    Selected File:
+                  </Typography>
+                  <Chip 
+                    icon={<AttachFileIcon />}
+                    label={file.name}
+                    color="primary"
+                    variant="outlined"
+                  />
+                </Paper>
+              </Grid>
+            )}
+          </Grid>
+        </DialogContent>
+
+        <DialogActions sx={{ p: 3, gap: 2 }}>
+          <Button 
+            onClick={() => setOpenMetadataDialog(false)}
+            variant="outlined"
+            size="large"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleUpload}
+            variant="contained"
+            size="large"
+            startIcon={<CloudUploadIcon />}
+            disabled={!category || !subcategory || !rcaLink}
+            sx={{
+              background: 'linear-gradient(135deg, #370467 0%, #394A8C 100%)',
+              px: 4,
+              '&:hover': {
+                background: 'linear-gradient(135deg, #1a1f4a 0%, #2d3a75 100%)',
+              }
+            }}
+          >
+            Upload File
+          </Button>
+        </DialogActions>
       </Dialog>
 
-      <div style={cardStyle}>
-        <button
-          onClick={() => setOpenMetadataDialog(true)}
-          style={chooseFileBtnStyle}
-          onMouseOver={(e) => (e.target.style.background = "#c7b5cfff")}
-          onMouseOut={(e) => (e.target.style.background = "#e6dcff")}
+      {/* Error Snackbar */}
+      <Snackbar
+        open={!!error}
+        autoHideDuration={6000}
+        onClose={() => setError("")}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setError("")} 
+          severity="error" 
+          variant="filled"
+          sx={{ borderRadius: 2 }}
         >
-          📂 Choose File
-        </button>
+          {error}
+        </Alert>
+      </Snackbar>
 
-        <div style={{ marginTop: "10px" }}>
-          <strong>Status:</strong> {status}
-          <br />
-          <progress value={progress} max="100" style={{ width: "100%", accentColor: "green" }} />
-        </div>
-      </div>
-    </div>
+      {/* Success Snackbar */}
+      <Snackbar
+        open={uploadSuccess}
+        autoHideDuration={4000}
+        onClose={() => setUploadSuccess(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setUploadSuccess(false)} 
+          severity="success" 
+          variant="filled"
+          sx={{ borderRadius: 2 }}
+        >
+          File uploaded successfully!
+        </Alert>
+      </Snackbar>
+    </Box>
   );
 };
-
-  const labelStyle = {
-    display: "flex",
-    alignItems: "center",
-    marginBottom: "10px",
-    gap: "10px"
-  };
-
-const sendBtnStyle = {
-  padding: "8px 16px",
-  background: "#D8B4E2",
-  color: "#4B0082",
-  border: "1px solid #B67EDC",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontWeight: "500",
-  fontSize: 14,
-  transition: "all 0.3s ease",
-};
-
-const cardStyle = {
-  flex: "1 1 400px",
-  background: "#fff",
-  borderRadius: 12,
-  boxShadow: "0 4px 10px rgba(0,0,0,0.1)",
-  padding: 15,
-  minWidth: "400px",
-};
-
-const chooseFileBtnStyle = {
-  padding: "10px 20px",
-  background: "#D8B4E2",
-  color: "#4B0082",
-  border: "1px solid #B67EDC",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontWeight: "500",
-  fontSize: "14px",
-  transition: "all 0.3s ease",
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-};
-
-const uploadBtnStyle = {
-    background: "#673ab7",
-    color: "#fff",
-    padding: "8px 16px",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer"
-  };
 
 export default Users;
