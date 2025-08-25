@@ -91,7 +91,7 @@ export const handler = async (event) => {
         await dynamodb.send(new DeleteCommand({ TableName: tableName, Key: { Incident_Number } }));
         const updatedStats = await updateCachedStatsOnDelete(incidentToDelete);
 
-        await sendToClient(apigw, connectionId, { message: `Deleted RCA FILE ${key} of ${Incident_Number}` });
+        await sendToClient(apigw, connectionId, { message: `Deleted ${Incident_Number}` });
         if (updatedStats) {
           await sendToClient(apigw, connectionId, {
             graph1: updatedStats.Monthly_Count_Per_Category,
@@ -136,8 +136,24 @@ export const handler = async (event) => {
         }));
         break;
       }
-
       case 'fetch': {
+        let stats;
+
+        try {
+          stats = await getCachedStats();
+          if (stats) {
+            await sendToClient(apigw, connectionId, {
+              graph1: stats.Monthly_Count_Per_Category,
+              graph2: stats.Monthly_Avg_Time_Taken_to_Resolve,
+              graph3: stats.Monthly_RCA_Count,
+              graph4: stats.Yearly_Priority_count,
+              categories: stats.Unique_Categories_Array
+            });
+          }
+        } catch (error) {
+          console.warn('Failed to use cached stats. Will recalculate after full scan.', error);
+        }
+
         let Incidents = [];
         let ExclusiveStartKey;
 
@@ -162,22 +178,8 @@ export const handler = async (event) => {
           ExclusiveStartKey = result.LastEvaluatedKey;
         } while (ExclusiveStartKey);
 
-        let stats;
-        try {
-          stats = await getCachedStats();
-        } catch (error) {
-          console.warn('Failed to use cached stats. Will recalculate.', error);
-        }
-
-        if (stats) {
-          await sendToClient(apigw, connectionId, {
-            graph1: stats.Monthly_Count_Per_Category,
-            graph2: stats.Monthly_Avg_Time_Taken_to_Resolve,
-            graph3: stats.Monthly_RCA_Count,
-            graph4: stats.Yearly_Priority_count,
-            categories: stats.Unique_Categories_Array
-          });
-        } else {
+        // Recalculate stats only if cache was missing or we want to refresh
+        if (!stats) {
           const newStats = calculateIncidentStats(Incidents);
           await sendToClient(apigw, connectionId, {
             graph1: newStats.Monthly_Count_Per_Category,
@@ -189,6 +191,7 @@ export const handler = async (event) => {
 
           await cacheStats(newStats);
         }
+
         break;
       }
 
@@ -223,6 +226,7 @@ function calculateIncidentStats(Incidents) {
   const Monthly_Avg_Time_Taken_to_Resolve = {};
   const Yearly_Priority_count = {};
   const Monthly_Priority_count = {};
+  const Monthly_Count_Per_Category_Per_Priority = {};
   const Unique_Categories = new Set();
   const Yearly_Category_Count = {};
 
@@ -249,6 +253,7 @@ function calculateIncidentStats(Incidents) {
       Monthly_Avg_Time_Taken_to_Resolve[year] = {};
       Monthly_RCA_Count[year] = {};
       Monthly_Priority_count[year] = {};
+      Monthly_Count_Per_Category_Per_Priority[year] = {};
       Yearly_Priority_count[year] = { Critical: 0, High: 0, Medium: 0 };
       Yearly_Category_Count[year] = {};
 
@@ -260,6 +265,7 @@ function calculateIncidentStats(Incidents) {
         Monthly_Avg_Time_Taken_to_Resolve[year][m] = 0;
         Monthly_RCA_Count[year][m] = 0;
         Monthly_Priority_count[year][m] = { Critical: 0, High: 0, Medium: 0 };
+        Monthly_Count_Per_Category_Per_Priority[year][m] = {};
       }
     }
 
@@ -284,6 +290,12 @@ function calculateIncidentStats(Incidents) {
     if (Priority && validPriorities.has(Priority)) {
       Monthly_Priority_count[year][monthName][Priority] += 1;
       Yearly_Priority_count[year][Priority] += 1;
+      if (category) {
+        if (!Monthly_Count_Per_Category_Per_Priority[year][monthName][category]) {
+          Monthly_Count_Per_Category_Per_Priority[year][monthName][category] = { Critical: 0, High: 0, Medium: 0 };
+        }
+        Monthly_Count_Per_Category_Per_Priority[year][monthName][category][Priority] += 1;
+      }
     }
 
     if (incident.Time_Taken_to_Resolve) {
@@ -312,6 +324,7 @@ function calculateIncidentStats(Incidents) {
     Monthly_RCA_Count,
     Yearly_Priority_count,
     Monthly_Priority_count,
+    Monthly_Count_Per_Category_Per_Priority,
     Unique_Categories_Array: Array.from(Unique_Categories),
     Yearly_Category_Count
   };
@@ -355,7 +368,8 @@ async function updateCachedStatsOnDelete(incidentToDelete) {
     const {
       Monthly_Count, Monthly_Count_Per_Category, sum_TTOR, count_TTOR,
       Monthly_Avg_Time_Taken_to_Resolve, Monthly_RCA_Count, Yearly_Priority_count,
-      Monthly_Priority_count, Unique_Categories_Array, Yearly_Category_Count
+      Monthly_Priority_count, Unique_Categories_Array, Yearly_Category_Count,
+      Monthly_Count_Per_Category_Per_Priority
     } = cachedStats;
 
     const date = new Date(incidentToDelete.Reported_Date_Time);
@@ -397,6 +411,9 @@ async function updateCachedStatsOnDelete(incidentToDelete) {
       if (Yearly_Priority_count?.[year]?.[Priority] > 0) {
         Yearly_Priority_count[year][Priority] -= 1;
       }
+      if (category && Monthly_Count_Per_Category_Per_Priority?.[year]?.[monthName]?.[category]?.[Priority] > 0) {
+        Monthly_Count_Per_Category_Per_Priority[year][monthName][category][Priority] -= 1;
+      }
     }
 
     if (incidentToDelete.Time_Taken_to_Resolve) {
@@ -414,7 +431,8 @@ async function updateCachedStatsOnDelete(incidentToDelete) {
     const updatedStats = {
       Monthly_Count, Monthly_Count_Per_Category, sum_TTOR, count_TTOR,
       Monthly_Avg_Time_Taken_to_Resolve, Monthly_RCA_Count, Yearly_Priority_count,
-      Monthly_Priority_count, Unique_Categories_Array, Yearly_Category_Count
+      Monthly_Priority_count, Unique_Categories_Array, Yearly_Category_Count,
+      Monthly_Count_Per_Category_Per_Priority
     };
     await cacheStats(updatedStats);
     return updatedStats;

@@ -72,12 +72,12 @@ export const handler = async (event) => {
 
   try {
 
-    await sendToClient({ percentage: 10, message: `Starting extraction for "${fileName}"...` })
+    await sendToClient({ percentage: 10, message: `📄 Starting to process "${fileName}"...` })
     const s3Object = await s3.getObject({ Bucket: bucketName, Key: fileName }).promise();
-    await sendToClient({ percentage: 25, message: `File downloaded from S3. Preparing for HTML conversion...` });
+    await sendToClient({ percentage: 20, message: `✅ File received! Converting document to readable format...` });
 
     const HTML = await extractHTML(s3Object.Body);
-    await sendToClient({ percentage: 40, message: `HTML extracted successfully. Preparing AI input...` });
+    await sendToClient({ percentage: 30, message: `📝 Document converted! Preparing content for AI analysis...` });
 
     const model = new ChatBedrockConverse({
       model: 'anthropic.claude-3-5-sonnet-20240620-v1:0',
@@ -85,11 +85,11 @@ export const handler = async (event) => {
       temperature: 0,
     });
     const chain = prompt.pipe(model).pipe(parser);
-    await sendToClient({ percentage: 60, message: `Sending content to Claude AI for structured data extraction...` });
+    await sendToClient({ percentage: 40, message: `🤖 AI is analyzing your document and extracting key incident data...` });
 
     const parsedOutput = await chain.invoke({ text: HTML });
 
-    await sendToClient({ percentage: 80, message: `Structured data received. Saving to database...` });
+    await sendToClient({ percentage: 85, message: `💾 Great! Data extracted successfully. Saving to your database...` });
 
     parsedOutput.fileName = fileName;
     parsedOutput.Category=Category;
@@ -104,8 +104,8 @@ export const handler = async (event) => {
     }).promise();
 
     await sendToClient({
-      percentage: 90,
-      message: `Extraction complete for "${fileName}".`,
+      percentage: 95,
+      message: `🎉 Processing complete for "${fileName}"! Your incident data is now available.`,
       parsedOutput,
     });
 
@@ -113,7 +113,7 @@ export const handler = async (event) => {
     
     await sendToClient({
       percentage: 100,
-      message: `Performing Cleanup`,
+      message: `🧹 Finishing up and cleaning temporary files...`,
       parsedOutput,
     });
     return { statusCode: 200 };
@@ -121,7 +121,7 @@ export const handler = async (event) => {
     console.error('Extraction Error:', error);
     await sendToClient({
       percentage: 100,
-      error: `Extraction failed for "${fileName}".`,
+      error: `❌ Sorry, we couldn't process "${fileName}". Please try again or contact support if the issue persists.`,
       details: error.message,
     });
     return {
@@ -133,7 +133,8 @@ export const handler = async (event) => {
 
 async function deleteStatsCache() {
   try {
-    await s3.deleteObject({Bucket:bucketName,Key:STATS_CACHE_KEY}).promise();
+    const response = await s3.deleteObject({Bucket: bucketName, Key: STATS_CACHE_KEY}).promise();
+    console.log('deleteStatsCache response:', response);
   } catch (error) {
     console.error('deleteStatsCache error:', error);
   }

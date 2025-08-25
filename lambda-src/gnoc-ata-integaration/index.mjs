@@ -34,7 +34,8 @@ const VALID_STAT_TYPES = [
   'Monthly_RCA_Count',
   'Monthly_Priority_count',
   'Yearly_Priority_count',
-  'Yearly_Category_Count'
+  'Yearly_Category_Count',
+  'Monthly_Count_Per_Category_Per_Priority'
 ];
 
 const monthNames = [
@@ -58,6 +59,8 @@ export const handler = async (event) => {
       return await getMonthlyStats(event.queryStringParameters);
     case 'Calculate':
       return await calculate(event.queryStringParameters);
+    case 'GetAllAvailableCategories':
+      return await getAllAvailableCategories();
     default:
       return { status: "ERROR", error: `Unknown action: ${path}` };
   }
@@ -233,6 +236,7 @@ const getMonthlyStats = async ({ year, statType }) => {
     Monthly_Avg_Time_Taken_to_Resolve: stats.Monthly_Avg_Time_Taken_to_Resolve[year] || {},
     Monthly_RCA_Count: stats.Monthly_RCA_Count[year] || {},
     Monthly_Priority_count: stats.Monthly_Priority_count[year] || {},
+    Monthly_Count_Per_Category_Per_Priority: stats.Monthly_Count_Per_Category_Per_Priority[year] || {},
     Yearly_Priority_count: stats.Yearly_Priority_count[year] || { Critical: 0, High: 0, Medium: 0 },
     Yearly_Category_Count: stats.Yearly_Category_Count[year] || {}
   };
@@ -265,6 +269,7 @@ function calculateIncidentStats(Incidents) {
   const Monthly_Avg_Time_Taken_to_Resolve = {};
   const Yearly_Priority_count = {};
   const Monthly_Priority_count = {};
+  const Monthly_Count_Per_Category_Per_Priority = {};
   const Unique_Categories = new Set();
   const Yearly_Category_Count = {};
 
@@ -291,6 +296,7 @@ function calculateIncidentStats(Incidents) {
       Monthly_Avg_Time_Taken_to_Resolve[year] = {};
       Monthly_RCA_Count[year] = {};
       Monthly_Priority_count[year] = {};
+      Monthly_Count_Per_Category_Per_Priority[year] = {};
       Yearly_Priority_count[year] = { Critical: 0, High: 0, Medium: 0 };
       Yearly_Category_Count[year] = {};
 
@@ -302,6 +308,7 @@ function calculateIncidentStats(Incidents) {
         Monthly_Avg_Time_Taken_to_Resolve[year][m] = 0;
         Monthly_RCA_Count[year][m] = 0;
         Monthly_Priority_count[year][m] = { Critical: 0, High: 0, Medium: 0 };
+        Monthly_Count_Per_Category_Per_Priority[year][m] = {};
       }
     }
 
@@ -326,6 +333,12 @@ function calculateIncidentStats(Incidents) {
     if (Priority && validPriorities.has(Priority)) {
       Monthly_Priority_count[year][monthName][Priority] += 1;
       Yearly_Priority_count[year][Priority] += 1;
+      if (category) {
+        if (!Monthly_Count_Per_Category_Per_Priority[year][monthName][category]) {
+          Monthly_Count_Per_Category_Per_Priority[year][monthName][category] = { Critical: 0, High: 0, Medium: 0 };
+        }
+        Monthly_Count_Per_Category_Per_Priority[year][monthName][category][Priority] += 1;
+      }
     }
 
     if (incident.Time_Taken_to_Resolve) {
@@ -354,10 +367,36 @@ function calculateIncidentStats(Incidents) {
     Monthly_RCA_Count,
     Yearly_Priority_count,
     Monthly_Priority_count,
+    Monthly_Count_Per_Category_Per_Priority,
     Unique_Categories_Array: Array.from(Unique_Categories),
     Yearly_Category_Count
   };
 }
+
+const getAllAvailableCategories = async () => {
+  try {
+    let stats;
+    try {
+      stats = await getCachedStats();
+    } catch {
+      const incidents = await getAllIncidents();
+      stats = calculateIncidentStats(incidents);
+      await cacheStats(stats);
+    }
+
+    const categories = stats.Unique_Categories_Array || [];
+
+    return {
+      status: "SUCCESS",
+      data: { categories }
+    };
+  } catch (err) {
+    return {
+      status: "FAILURE",
+      error: `Failed to get available categories: ${err.message}`
+    };
+  }
+};
 
 async function getCachedStats() {
   try {
@@ -365,6 +404,7 @@ async function getCachedStats() {
       Bucket: bucketName,
       Key: STATS_CACHE_KEY
     }));
+    console.log(response)
     const jsonString = await response.Body.transformToString();
     return JSON.parse(jsonString);
   } catch (error) {

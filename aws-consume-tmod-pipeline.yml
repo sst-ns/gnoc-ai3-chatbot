@@ -32,63 +32,78 @@ stages:
       inputs:
         targetType: 'inline'
         script: |
-          # Automatically detect all subdirectories in lambda-src
-          $lambdaSrcRoot = "$(Build.SourcesDirectory)/lambda-src"
-          $lambdaFunctions = Get-ChildItem -Path $lambdaSrcRoot -Directory | Select-Object -ExpandProperty Name
-
-          # Create lambdas output directory
-          $lambdaOutputDir = "$(Build.SourcesDirectory)/lambdas-build"
-          if (!(Test-Path $lambdaOutputDir)) {
-            New-Item -ItemType Directory -Path $lambdaOutputDir -Force
+          # Ensure 'zip' exists
+          if (-not (Get-Command zip -ErrorAction SilentlyContinue)) {
+            Write-Error "'zip' command is required but not installed. This script assumes a Linux agent with zip available."
+            exit 1
           }
 
-          # Process each Node.js lambda function
+          $lambdaSrcRoot = "$(Build.SourcesDirectory)/lambda-src"
+          $lambdaOutputDir = "$(Build.SourcesDirectory)/lambdas-build"
+
+          if (!(Test-Path $lambdaOutputDir)) {
+            New-Item -ItemType Directory -Path $lambdaOutputDir -Force | Out-Null
+          }
+
+          $lambdaFunctions = Get-ChildItem -Path $lambdaSrcRoot -Directory | Select-Object -ExpandProperty Name
+
           foreach ($lambdaName in $lambdaFunctions) {
             Write-Host "=================================================="
-            Write-Host "Processing Node.js Lambda: $lambdaName"
+            Write-Host "Building Lambda: $lambdaName"
             Write-Host "=================================================="
-            
+
             $lambdaSourceDir = "$lambdaSrcRoot/$lambdaName"
-            
+            $zipPath = "$lambdaOutputDir/$lambdaName.zip"
+
             if (!(Test-Path $lambdaSourceDir)) {
-              Write-Warning "Source directory not found for $lambdaName at $lambdaSourceDir. Skipping..."
+              Write-Warning "Skipping missing Lambda dir: $lambdaSourceDir"
               continue
             }
-            
-            # Navigate to lambda source directory
-            Set-Location $lambdaSourceDir
-            Write-Host "Current directory: $(Get-Location)"
-            Write-Host "Building Node.js Lambda: $lambdaName"
-            
-            # Install dependencies if package.json exists
+
+            Push-Location $lambdaSourceDir
+
             if (Test-Path "package.json") {
-              Write-Host "Installing dependencies for $lambdaName..."
+              Write-Host "Installing dependencies..."
               npm ci --production
               if ($LASTEXITCODE -ne 0) {
-                Write-Error "npm install failed for $lambdaName"
+                Write-Error "npm install failed in $lambdaName"
                 exit 1
               }
-            } else {
-              Write-Host "No package.json found for $lambdaName, skipping npm install"
             }
-            
-            # Create zip package
-            Write-Host "Creating zip package for $lambdaName..."
-            $zipPath = "$lambdaOutputDir/$lambdaName.zip"
-            Compress-Archive -Path "$lambdaSourceDir/*" -DestinationPath $zipPath -Force
-            
+
             if (Test-Path $zipPath) {
-              $fileSize = (Get-Item $zipPath).Length / 1MB
-              Write-Host "✅ Successfully created $lambdaName.zip (Size: $([math]::Round($fileSize, 2)) MB)"
+              Remove-Item $zipPath -Force
+            }
+
+            Write-Host "Normalizing file timestamps..."
+            & find . -exec touch -t 197001010000.00 '{}' +
+
+            Write-Host "Setting consistent file permissions..."
+            & find . -type f -exec chmod 644 '{}' +
+            & find . -type d -exec chmod 755 '{}' +
+
+            Write-Host "Creating deterministic zip with correct relative paths..."
+            $relativePaths = Get-ChildItem -Recurse -File | Sort-Object FullName | ForEach-Object {
+              $relative = $_.FullName.Substring((Get-Location).Path.Length + 1).Replace('\', '/')
+              $relative
+            }
+
+            $relativePaths | & zip -X "$zipPath" -@ | Out-Null
+
+            Pop-Location
+
+            if (Test-Path $zipPath) {
+              $sizeMB = [math]::Round((Get-Item $zipPath).Length / 1MB, 2)
+              $sha256 = Get-FileHash -Path $zipPath -Algorithm SHA256
+              Write-Host "✅ Created $lambdaName.zip ($sizeMB MB) SHA256: $($sha256.Hash)"
             } else {
-              Write-Error "❌ Failed to create zip package for $lambdaName"
+              Write-Error "❌ Failed to create $lambdaName.zip"
               exit 1
             }
           }
 
-          # List all created packages
           Write-Host "=================================================="
-          Write-Host "Node.js Lambda Packages Summary:"
+          Write-Host "Lambda Packaging Complete:"
           Write-Host "=================================================="
           Get-ChildItem "$lambdaOutputDir/*.zip" | ForEach-Object {
             $sizeKB = [math]::Round($_.Length / 1KB, 2)
@@ -238,6 +253,3 @@ stages:
     artifactName: 'gnocbotaitest'
     varFileName: 'aws-npd.tfvars'
     WORKSPACE_FILES: $(WORKSPACE_FILES)
-
-
-

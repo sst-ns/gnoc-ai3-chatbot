@@ -54,7 +54,7 @@ stages:
             Write-Host "Searching for Lambda packages in: $lambdaPath"
             
             if (Test-Path $lambdaPath) {
-              $lambdaFiles = Get-ChildItem -Path $lambdaPath -Filter "*.zip" | Select-Object -ExpandProperty Name
+              $lambdaFiles = Get-ChildItem -Path $lambdaPath -Filter "*.zip" | Select-Object -ExpandProperty Name | Sort-Object
               $lambdaListJson = @($lambdaFiles) | ConvertTo-Json -Compress -AsArray
               Write-Host "##vso[task.setvariable variable=LAMBDA_FILES]$lambdaListJson"
               Write-Host "##vso[task.setvariable variable=LAMBDA_PATH]$lambdaPath"

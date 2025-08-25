@@ -14,10 +14,11 @@ The backend is composed of a set of AWS Lambda functions, each responsible for a
 - **`227998-cloud-secure-header-gnoc-ai3-chatbot-stg`**: This function is a Lambda@Edge function that triggers on `origin-response` events from CloudFront. It adds a set of security headers to the response to enhance the security of the web application.
 
 - **`gnoc-ata-integaration`**: This function serves as the primary API for the Amethyst studio agent. It provides the following functionalities:
-    - `GetIncidentById`: Retrieves an incident from DynamoDB by its ID.
-    - `GetIncidentsByDate`: Retrieves incidents from DynamoDB within a specified date range with optional filtering based on category and priority.
-    - `GetIncidentByProblemRecord`: Retrieves an incident from DynamoDB by its problem record number.
-    - `GetAvailableCategories`: Retrieves a list of available incident categories from a cached S3 object or by querying DynamoDB.
+    - `GetIncidentById`: Retrieves an incidents from DynamoDB by its ID.
+    - `GetIncidentsByDate`: Retrieves incidents from DynamoDB within a specified date range with optional filtering based on category, priority, and source.
+    - `GetIncidentByProblemRecord`: Retrieves an incidents from DynamoDB by its problem record numbers.
+    - `GetMonthlyStats`: Retrieves pre-calculated monthly, yearly, or financial-yearly statistics for incidents based on a specified year and statistic type.
+    - `Calculate`: Evaluates a mathematical expression using the math.js library.
 
 - **`gnoc-chart-visualizer-tool`**: This function generates SVG charts (pie, bar, or line) based on a given JSON configuration. It uploads the generated chart to an S3 bucket and returns a presigned URL to access it to amythest studio agent.
 
@@ -59,8 +60,10 @@ The infrastructure is managed using Terraform and is composed of the following A
         -   `GET /GetIncidentById`
         -   `GET /GetIncidentsByDate`
         -   `GET /GetIncidentByProblemRecord`
-        -   `GET /GetAvailableCategories`
+        -   `GET /GetMonthlyStats`
+        -   `GET /Calculate`
         -   `GET /chartVisualizer`
+        -   `GET /GetAllAvailableCategories`
     -   **Security**: The API is secured using a JWT authorizer, which validates tokens based on a configured issuer (`var.issuer`) and audience (`var.audience`).
 -   **WebSocket API Gateway**: A WebSocket API Gateway (`var.socket_gateway_name`) provides real-time, bidirectional communication between the frontend and the `gnoc-file-handling-lambda`.
     -   **Routes**: `$connect`, `fetch`, `delete`, `extract`, `upload`, `excel`.
@@ -92,6 +95,11 @@ The CI/CD pipeline is defined using Azure DevOps and is composed of the followin
 
 - **`aws-consume-tmod-pipeline.yml`**: This is the main pipeline file. It defines the following stages:
     - **BuildLambdas**: This stage builds and packages all the Node.js Lambda functions. It installs the dependencies for each function and then creates a zip file for each one. The zip files are then published as a build artifact.
+        - **Deterministic Packaging**: To optimize the deployment process and avoid unnecessary updates, this stage implements deterministic packaging for all Lambda functions. This ensures that a new version of a function is deployed only when its underlying code has actually changed. This is achieved through the following steps:
+            -   **Timestamp Normalization**: Before creating the ZIP archive, all file timestamps are reset to a fixed, constant value (the Unix epoch: `1970-01-01 00:00:00`).
+            -   **Permission Standardization**: File permissions are standardized to `644` for files and `755` for directories.
+            -   **Consistent Archiving**: The `zip` command is used with options that ensure a consistent file order and metadata within the archive.
+        As a result, if the source code of a Lambda function has not changed, the generated ZIP file will have the exact same SHA256 hash as the previous build. Terraform uses this hash to determine whether the function needs to be redeployed. This approach significantly speeds up the deployment process and reduces the risk of unintended changes.
     - **BuildFrontend**: This stage builds and packages the frontend application. It installs the dependencies and then runs the build script. The build output is then published as a build artifact.
     - **Plan**: This stage runs `terraform plan` to create an execution plan for the infrastructure changes. It uses the `aws-consume-tfmod-plan.yml` template.
     - **Apply**: This stage runs `terraform apply` to apply the infrastructure changes. It uses the `aws-consume-tfmod-apply.yml` template.
