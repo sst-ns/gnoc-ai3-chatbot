@@ -19,8 +19,8 @@ export const listenForAutoReset = (callback) => {
 export const CHATBOT_FUNCTION_URL = "https://uebm5ahiy5zvtyr7edfakdlzrm0cffcx.lambda-url.us-west-2.on.aws/";
 
 export const connectWebSocket = (accessToken) => {
-  // const baseUrl = "wss://jvzpnuyxyf.execute-api.us-west-2.amazonaws.com/default";
-  const baseUrl = "wss://cew6zezbjd.execute-api.us-east-1.amazonaws.com/default";
+  // const baseUrl = "wss://jvzpnuyxyf.execute-api.us-west-2.amazonaws.com/default";   // local 
+  const baseUrl = "wss://cew6zezbjd.execute-api.us-east-1.amazonaws.com/default";     //dev
 
 
   const wsUrl = accessToken

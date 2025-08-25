@@ -165,11 +165,11 @@ const Users = () => {
   });
 }, [accessToken]);
 
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
-    setFile(selectedFile);
-    setError("");
-  };
+  // const handleFileChange = (e) => {
+  //   const selectedFile = e.target.files[0];
+  //   setFile(selectedFile);
+  //   setError("");
+  // };
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -180,17 +180,96 @@ const Users = () => {
       setDragActive(false);
     }
   };
+  const allowedExtensions = [".docx", ".xlsx"];
+const MAX_FILE_SIZE_BYTES = 3 * 1024 * 1024; // 3MB
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
-      setError("");
+  const handleFileChange = (e) => {
+  const selectedFile = e.target.files[0];
+  if (selectedFile) {
+    if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
+      setError("File size exceeds 3MB limit.");
+      setFile(null);
+      return;
     }
-  };
+    const lowerName = selectedFile.name.toLowerCase();
+    if (!allowedExtensions.some(ext => lowerName.endsWith(ext))) {
+      setError("Only DOCX and XLSX files are supported.");
+      setFile(null);
+      return;
+    }
+    setFile(selectedFile);
+    setError("");
+  }
+};
+
+const handleDrop = (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  setDragActive(false);
+  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+    const selectedFile = e.dataTransfer.files;
+    if (selectedFile.size > MAX_FILE_SIZE_BYTES) {
+      setError("File size exceeds 3MB limit.");
+      setFile(null);
+      return;
+    }
+    const lowerName = selectedFile.name.toLowerCase();
+    if (!allowedExtensions.some(ext => lowerName.endsWith(ext))) {
+      setError("Only DOCX and XLSX files are supported.");
+      setFile(null);
+      return;
+    }
+    setFile(selectedFile);
+    setError("");
+  }
+};
+  // Allowed extensions
+// const allowedExtensions = [".docx", ".xlsx"];
+
+// const validateFileType = (file) => {
+// if (!file) return false;
+// const lowerName = file.name.toLowerCase();
+// return allowedExtensions.some(ext => lowerName.endsWith(ext));
+// };
+
+// const handleFileChange = (e) => {
+// const selectedFile = e.target.files[0];
+// if (selectedFile && !validateFileType(selectedFile)) {
+// setError("Only DOCX and XLSX files are supported.");
+// setFile(null);
+// return;
+// }
+// setFile(selectedFile);
+// setError("");
+// };
+
+// const handleDrop = (e) => {
+//   e.preventDefault();
+//   e.stopPropagation();
+//  setDragActive(false);
+//  if (e.dataTransfer.files && e.dataTransfer.files) {
+//  const selectedFile = e.dataTransfer.files;
+//  if (!validateFileType(selectedFile)) {
+//  setError("Only DOCX and XLSX files are supported.");
+//  setFile(null);
+//  return;
+//   }
+//  setFile(selectedFile);
+// setError("");
+//  }
+// };
+
+
+  // const handleDrop = (e) => {
+  //   e.preventDefault();
+  //   e.stopPropagation();
+  //   setDragActive(false);
+    
+  //   if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+  //     setFile(e.dataTransfer.files[0]);
+  //     setError("");
+  //   }
+  // };
 
   const handleCategoryChange = (event) => {
     const val = event.target.value;
@@ -351,6 +430,7 @@ return (
             <input
               id="file-input"
               type="file"
+              accept=".docx,.xlsx"
               onChange={handleFileChange}
               style={{ display: 'none' }}
             />
